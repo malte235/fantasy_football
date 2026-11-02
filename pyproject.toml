@@ -1,0 +1,23 @@
+[project]
+name = "fantasy-football"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "espn-api>=0.46.0",
+    "pandas>=3.0.6",
+    "pillow>=13.0.0",
+    "pydantic>=2.14.1",
+    "pytest>=9.1.1",
+    "pyyaml>=6.0.3",
+    "ruff>=0.16.8",
+    "ty>=0.0.82",
+]
+
+[project.scripts]
+fantasy-football = "fantasy_football.main:main"
+
+[build-system]
+requires = ["uv_build>=0.12.17,<0.13.0"]
+build-backend = "uv_build"

@@ -1,0 +1,28 @@
+league:
+  id: 561666376
+  season: 2026
+
+payout:
+  amount_dkk: 50
+
+data:
+  result_path: data/results
+
+challenges:
+  1: highest_scoring_team
+  2: blackjack
+  3: show_me_your_tds
+  4: waiver_wizard
+  5: largest_margin_winners
+  6: over_achiever
+  7: consolation_prize
+  8: defense_wins_championships
+  9: photo_finish
+  10: lederhosen_bowl
+  11: art_of_the_deal
+  12: biggest_loser
+  13: bulls_eye
+  14: gone_but_not_forgotten
+  15: legatron
+  16: sweet_sixteen
+  17: hail_mary

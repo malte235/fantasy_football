@@ -1,0 +1,18 @@
+Week,Name,Explanation,Exclusions
+1,Top Scorer,Highest scoring team,
+2,Blackjack,"Team with a starter closest to 21 points without going over (<=21)",DST
+3,Show me your TDs,"Team with the most touchdowns (all kinds of TDs incl. passing, return, etc.)",
+4,Waiver Wizard,"Team with highest scoring waiver / free agent picked up after week 3 and started in this week",
+5,Blow Out,Team with the biggest margin of victory,
+6,Over Achiever,Team with the most points scored over their weekly projection,
+7,Consolation Prize,"Team with the single worst bench decision (points over lowest-scoring same position starter, incl. FLEX)",
+8,Defense Wins Championships,Team with the highest-scoring defense,
+9,Photo Finish,Winning team with the closest margin of victory,
+10,Lederhosen Bowl,"Team with the highest scoring starter that plays in the Munich game (Patriots - Lions)",
+11,Art of the Deal,Team with the highest scoring traded player (traded at any point before and started this week),
+12,Biggest Loser,Losing team with the highest score,
+13,Bulls-eye,Team closest to their projected point total,
+14,Gone but not forgotten,"Highest scoring team in week 14 that did not make the playoffs (i.e. is ranked 7-12 after week 14)",
+15,Legatron,Team with longest field goal made,
+16,Sweet 16,"Team with a starter closest to 16 points (over or under)",DST
+17,Hail Mary,Team starting the QB that throws the longest TD,
