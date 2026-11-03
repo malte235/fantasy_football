@@ -2,6 +2,7 @@ import argparse
 import logging
 import os
 from pathlib import Path
+from typing import Any, cast
 
 from espn_api.football import League  # type: ignore[import-not-found]
 
@@ -19,17 +20,23 @@ def main() -> None:
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
     default_config = Path(__file__).resolve().parents[2] / "config" / "config.yaml"
-    parser = argparse.ArgumentParser(description="Run this week's fantasy challenge.")
+    parser = argparse.ArgumentParser(description="Run a fantasy football challenge.")
     parser.add_argument(
         "--config",
         type=Path,
         default=default_config,
         help=f"Path to YAML config (default: {default_config})",
     )
-    parser.add_argument(
+    week_group = parser.add_mutually_exclusive_group()
+    week_group.add_argument(
         "--week",
         type=int,
         help="Scoring week to run instead of ESPN's current scoring week.",
+    )
+    week_group.add_argument(
+        "--previous-week",
+        action="store_true",
+        help="Run the scoring week immediately before ESPN's current scoring week.",
     )
     args = parser.parse_args()
     logger.info("Starting weekly fantasy challenge run.")
@@ -51,10 +58,24 @@ def main() -> None:
         swid=os.environ.get("FANTASY_SWID") or None,
     )
     logger.info("ESPN league client initialized.")
+    week_override = args.week
+    if args.previous_week:
+        current_week = int(cast(Any, league).current_week)
+        if current_week <= 1:
+            parser.error(
+                f"Cannot determine a previous scoring week from ESPN week "
+                f"{current_week}."
+            )
+        week_override = current_week - 1
+        logger.info(
+            "Using previous scoring week %s based on ESPN current week %s.",
+            week_override,
+            current_week,
+        )
     week, result = Challenges(league).execute(
         config.challenges,
         config.payout.amount_dkk,
-        args.week,
+        week_override,
     )
     output_file = write_weekly_results(
         result,

@@ -257,6 +257,46 @@ def test_cli_writes_the_result_to_the_configured_csv_path(
     ]
 
 
+def test_cli_previous_week_uses_week_before_espn_current_week(
+    tmp_path, monkeypatch, capsys
+):
+    requested_box_score_weeks = []
+    league = SimpleNamespace(
+        current_week=9,
+        teams=[],
+        box_scores=lambda week: requested_box_score_weeks.append(week) or [],
+    )
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        "league:\n  id: 12345\n  season: 2027\n"
+        "payout:\n  amount_dkk: 50\n"
+        "data:\n  result_path: weekly-results\n"
+        "challenges:\n  8: blackjack\n  9: blackjack\n",
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["fantasy-football", "--config", str(config_path), "--previous-week"],
+    )
+    monkeypatch.setattr(main_module, "League", lambda *args, **kwargs: league)
+
+    main_module.main()
+
+    output_file = tmp_path / "weekly-results" / "challenge_rankings_weekly_2027.csv"
+    image_file = (
+        tmp_path / "weekly-results" / "images" / "weekly_challenge_2027_week_08.png"
+    )
+    assert requested_box_score_weeks == [8]
+    assert output_file.exists()
+    assert image_file.exists()
+    assert capsys.readouterr().out.strip().splitlines() == [
+        str(Path("weekly-results") / output_file.name),
+        str(Path("weekly-results") / "images" / "weekly_challenge_2027_week_08.png"),
+    ]
+
+
 def test_run_weekly_challenge_rejects_explicit_week_without_assignment():
     league = SimpleNamespace(current_week=1)
     config = AppConfig(

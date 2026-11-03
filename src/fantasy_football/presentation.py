@@ -153,14 +153,18 @@ def _format_score(value: float | None) -> str:
     return "-" if value is None else f"{value:.2f}"
 
 
+def _capitalize_words_preserving_case(label: str) -> str:
+    return " ".join(word[0].upper() + word[1:] for word in label.split())
+
+
 def _table_headers(result: ChallengeResult) -> tuple[str, ...]:
     return (
         COLUMN_HEADERS[0],
         COLUMN_HEADERS[1],
         COLUMN_HEADERS[2],
         COLUMN_HEADERS[3],
-        result.value_1_label.capitalize(),
-        result.value_2_label.capitalize(),
+        _capitalize_words_preserving_case(result.value_1_label),
+        _capitalize_words_preserving_case(result.value_2_label),
         COLUMN_HEADERS[6],
     )
 

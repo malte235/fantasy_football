@@ -12,6 +12,10 @@ point the CLI at another YAML file with
 `uv run fantasy-football --config path/to/config.yaml`.
 To run a specific past scoring week, use `uv run fantasy-football --week 5`.
 The requested week must have an assignment in the `challenges` section.
+For a scheduled run after the scoring week completes, use
+`uv run fantasy-football --previous-week`; it selects the week before ESPN's
+current scoring week each time it runs. The previous week must have an
+assignment in the `challenges` section.
 The `data.result_path` setting controls where result CSV files are written; its
 default is `data/results`, relative to the current working directory. Each
 season is stored in `challenge_rankings_weekly_<season>.csv`. Running a week

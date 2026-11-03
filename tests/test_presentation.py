@@ -30,7 +30,7 @@ def test_weekly_challenge_image_uses_description_and_writes_png(tmp_path: Path):
     assert _read_description(description_file, 2).excluded_positions == "DST"
     result = ChallengeResult(
         challenge="Blackjack",
-        value_1_label="best eligible starter points",
+        value_1_label="starting D/ST points",
         value_2_label="baseline",
         operation="subtract",
         rank_order="descending",
@@ -60,7 +60,7 @@ def test_weekly_challenge_image_uses_description_and_writes_png(tmp_path: Path):
         "Team",
         "Payout (DKK)",
         "Score",
-        "Best eligible starter points",
+        "Starting D/ST Points",
         "Baseline",
         "Players",
     )
