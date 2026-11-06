@@ -21,6 +21,11 @@ class ChallengeCandidate:
     value_2: float | None = 0.0
     players: tuple[str, ...] = ()
     details: str | None = None
+    player_values: tuple[float | None, ...] | None = None
+    player_value_indices: tuple[int, ...] | None = None
+    opponent_team: str | None = None
+    eligible: bool = True
+    rank_value: float | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -36,6 +41,9 @@ class ChallengePlacement:
     players: tuple[str, ...] = ()
     details: str | None = None
     payout_dkk: float = 0.0
+    player_values: tuple[float | None, ...] | None = None
+    player_value_indices: tuple[int, ...] | None = None
+    opponent_team: str | None = None
 
     @property
     def value(self) -> float | None:
@@ -63,6 +71,10 @@ class Challenges:
 
     def __init__(self, league_data: League):
         self.league_data = league_data
+        self._box_scores_cache: dict[int, list[Any]] = {}
+        self._player_team_cache: dict[int, int] = {}
+        self._transactions_cache: dict[tuple[int, frozenset[str]], list[Any]] = {}
+        self._standings_cache: dict[int, list[Any]] = {}
 
     def execute(
         self,
@@ -108,7 +120,9 @@ class Challenges:
     def _apply_payout(result: ChallengeResult, amount_dkk: int) -> ChallengeResult:
         """Split the payout evenly between every first-place team."""
         first_place_count = sum(
-            placement.place == 1 and placement.difference is not None
+            placement.eligible
+            and placement.place == 1
+            and placement.difference is not None
             for placement in result.placements
         )
         per_winner_payout = (
@@ -123,7 +137,11 @@ class Challenges:
                 placement,
                 payout_dkk=float(
                     per_winner_payout
-                    if placement.place == 1 and placement.difference is not None
+                    if (
+                        placement.eligible
+                        and placement.place == 1
+                        and placement.difference is not None
+                    )
                     else Decimal("0.00")
                 ),
             )
@@ -137,7 +155,18 @@ class Challenges:
         return replace(result, placements=placements)
 
     def _box_scores(self, week: int) -> list[Any]:
-        return cast(list[Any], cast(Any, self.league_data).box_scores(week))
+        if week not in self._box_scores_cache:
+            box_scores = cast(Any, self.league_data).box_scores(
+                week, player_team_cache=self._player_team_cache
+            )
+            self._box_scores_cache[week] = cast(list[Any], box_scores)
+        return self._box_scores_cache[week]
+
+    def _standings(self, week: int) -> list[Any]:
+        if week not in self._standings_cache:
+            standings = cast(Any, self.league_data).standings_weekly(week)
+            self._standings_cache[week] = cast(list[Any], standings)
+        return self._standings_cache[week]
 
     @staticmethod
     def _sides(box_scores: list[Any]) -> list[Side]:
@@ -205,38 +234,67 @@ class Challenges:
             if candidate.team not in team_names:
                 team_names.append(candidate.team)
         candidates_by_team = {candidate.team: candidate for candidate in candidates}
+        opponents_by_team = {
+            candidate.team: candidate.opponent_team
+            for candidate in candidates
+            if candidate.opponent_team is not None
+        }
+        opponents_by_team.update(
+            {
+                candidate.opponent_team: candidate.team
+                for candidate in candidates
+                if candidate.opponent_team is not None
+            }
+        )
 
-        calculated: list[tuple[ChallengeCandidate, float]] = []
+        calculated: list[tuple[ChallengeCandidate, float, float]] = []
         for candidate in candidates:
-            if candidate.value_1 is None or candidate.value_2 is None:
+            if (
+                not candidate.eligible
+                or candidate.value_1 is None
+                or candidate.value_2 is None
+            ):
                 continue
             difference = candidate.value_1 - candidate.value_2
             if operation == "absolute_difference":
                 difference = abs(difference)
-            calculated.append((candidate, round(difference, 2)))
+            difference = round(difference, 2)
+            rank_value = (
+                difference
+                if candidate.rank_value is None
+                else round(candidate.rank_value, 2)
+            )
+            calculated.append((candidate, difference, rank_value))
         calculated.sort(
-            key=lambda entry: entry[1],
+            key=lambda entry: entry[2],
             reverse=rank_order == "descending",
         )
+        calculated.sort(key=lambda entry: not entry[0].eligible)
 
         placements: list[ChallengePlacement] = []
         ranked_teams: set[str] = set()
-        previous_difference: float | None = None
+        previous_rank: tuple[bool, float] | None = None
         place = 0
-        for index, (candidate, difference) in enumerate(calculated, start=1):
-            if difference != previous_difference:
+        for index, (candidate, difference, rank_value) in enumerate(
+            calculated, start=1
+        ):
+            rank = (candidate.eligible, rank_value)
+            if rank != previous_rank:
                 place = index
-                previous_difference = difference
+                previous_rank = rank
             placements.append(
                 ChallengePlacement(
                     place,
                     candidate.team,
-                    True,
+                    candidate.eligible,
                     candidate.value_1,
                     candidate.value_2,
                     difference,
                     candidate.players,
                     candidate.details,
+                    player_values=self._player_values(candidate),
+                    player_value_indices=self._player_value_indices(candidate),
+                    opponent_team=candidate.opponent_team,
                 )
             )
             ranked_teams.add(candidate.team)
@@ -249,12 +307,17 @@ class Challenges:
                 ChallengePlacement(
                     place + 1 if calculated else 1,
                     team,
-                    candidate is not None,
+                    candidate.eligible if candidate else False,
                     candidate.value_1 if candidate else None,
                     candidate.value_2 if candidate else None,
                     None,
                     candidate.players if candidate else (),
                     candidate.details if candidate else None,
+                    player_values=(self._player_values(candidate) if candidate else ()),
+                    player_value_indices=(
+                        self._player_value_indices(candidate) if candidate else ()
+                    ),
+                    opponent_team=opponents_by_team.get(team),
                 )
             )
 
@@ -269,6 +332,35 @@ class Challenges:
             needs_additional_data,
             note,
         )
+
+    @staticmethod
+    def _player_values(candidate: ChallengeCandidate) -> tuple[float | None, ...]:
+        if candidate.player_values is None:
+            return (candidate.value_1,) * len(candidate.players)
+        if len(candidate.player_values) != len(candidate.players):
+            raise ValueError(
+                f"Challenge candidate {candidate.team!r} has "
+                f"{len(candidate.players)} players but "
+                f"{len(candidate.player_values)} player values."
+            )
+        return candidate.player_values
+
+    @staticmethod
+    def _player_value_indices(candidate: ChallengeCandidate) -> tuple[int, ...]:
+        if candidate.player_value_indices is None:
+            return (1,) * len(candidate.players)
+        if len(candidate.player_value_indices) != len(candidate.players):
+            raise ValueError(
+                f"Challenge candidate {candidate.team!r} has "
+                f"{len(candidate.players)} players but "
+                f"{len(candidate.player_value_indices)} player value labels."
+            )
+        if any(index not in {1, 2} for index in candidate.player_value_indices):
+            raise ValueError(
+                f"Challenge candidate {candidate.team!r} has an invalid "
+                "player value label index; expected 1 or 2."
+            )
+        return candidate.player_value_indices
 
     @staticmethod
     def _best_player_per_team(
@@ -382,16 +474,21 @@ class Challenges:
     def _transactions(self, periods: range, types: set[str]) -> list[Any]:
         transactions: list[Any] = []
         for scoring_period in periods:
-            try:
-                period_transactions = cast(Any, self.league_data).transactions(
-                    scoring_period=scoring_period,
-                    types=types,
+            cache_key = (scoring_period, frozenset(types))
+            if cache_key not in self._transactions_cache:
+                try:
+                    period_transactions = cast(Any, self.league_data).transactions(
+                        scoring_period=scoring_period,
+                        types=types,
+                    )
+                except Exception as error:
+                    if str(error) != "No transactions found":
+                        raise
+                    period_transactions = []
+                self._transactions_cache[cache_key] = cast(
+                    list[Any], period_transactions
                 )
-            except Exception as error:
-                if str(error) == "No transactions found":
-                    continue
-                raise
-            transactions.extend(period_transactions)
+            transactions.extend(self._transactions_cache[cache_key])
         return transactions
 
     def waiver_wizard(self, week: int) -> ChallengeResult:
@@ -465,23 +562,27 @@ class Challenges:
                 continue
             home_score = float(box_score.home_score)
             away_score = float(box_score.away_score)
-            if home_score == away_score:
-                continue
-            winner, winner_score, loser_score = (
-                (home_team, home_score, away_score)
-                if home_score > away_score
-                else (away_team, away_score, home_score)
+            candidates.append(
+                ChallengeCandidate(
+                    str(home_team.team_name),
+                    home_score,
+                    away_score,
+                    opponent_team=str(away_team.team_name),
+                    eligible=home_score != away_score,
+                )
             )
             candidates.append(
                 ChallengeCandidate(
-                    str(winner.team_name),
-                    winner_score,
-                    loser_score,
+                    str(away_team.team_name),
+                    away_score,
+                    home_score,
+                    opponent_team=str(home_team.team_name),
+                    eligible=home_score != away_score,
                 )
             )
         return self._rank(
             "Blow Out",
-            "winning team points",
+            "team points",
             "opponent points",
             candidates,
         )
@@ -550,20 +651,28 @@ class Challenges:
                     )
             if regrets:
                 worst_gap = max(regret[0] for regret in regrets)
+                player_scores = sorted(
+                    {
+                        (regret[3], regret[1], 1)
+                        for regret in regrets
+                        if regret[0] == worst_gap
+                    }
+                    | {
+                        (player_name, regret[2], 2)
+                        for regret in regrets
+                        if regret[0] == worst_gap
+                        for player_name in regret[4]
+                    }
+                )
                 candidates.append(
                     ChallengeCandidate(
                         team,
                         next(regret[1] for regret in regrets if regret[0] == worst_gap),
                         next(regret[2] for regret in regrets if regret[0] == worst_gap),
-                        tuple(
-                            sorted(
-                                {
-                                    player_name
-                                    for regret in regrets
-                                    if regret[0] == worst_gap
-                                    for player_name in (regret[3], *regret[4])
-                                }
-                            )
+                        tuple(player_name for player_name, _, _ in player_scores),
+                        player_values=tuple(value for _, value, _ in player_scores),
+                        player_value_indices=tuple(
+                            value_index for _, _, value_index in player_scores
                         ),
                     )
                 )
@@ -598,23 +707,27 @@ class Challenges:
                 continue
             home_score = float(box_score.home_score)
             away_score = float(box_score.away_score)
-            if home_score == away_score:
-                continue
-            winner, winner_score, loser_score = (
-                (home_team, home_score, away_score)
-                if home_score > away_score
-                else (away_team, away_score, home_score)
+            candidates.append(
+                ChallengeCandidate(
+                    str(home_team.team_name),
+                    home_score,
+                    away_score,
+                    opponent_team=str(away_team.team_name),
+                    eligible=home_score > away_score,
+                )
             )
             candidates.append(
                 ChallengeCandidate(
-                    str(winner.team_name),
-                    winner_score,
-                    loser_score,
+                    str(away_team.team_name),
+                    away_score,
+                    home_score,
+                    opponent_team=str(home_team.team_name),
+                    eligible=away_score > home_score,
                 )
             )
         return self._rank(
             "Photo Finish",
-            "winning team points",
+            "team points",
             "opponent points",
             candidates,
             rank_order="ascending",
@@ -681,18 +794,30 @@ class Challenges:
                 continue
             home_score = float(box_score.home_score)
             away_score = float(box_score.away_score)
-            if home_score == away_score:
-                continue
-            loser, losing_score = (
-                (home_team, home_score)
-                if home_score < away_score
-                else (away_team, away_score)
+            candidates.append(
+                ChallengeCandidate(
+                    str(home_team.team_name),
+                    home_score,
+                    away_score,
+                    opponent_team=str(away_team.team_name),
+                    eligible=home_score < away_score,
+                    rank_value=home_score,
+                )
             )
-            candidates.append(ChallengeCandidate(str(loser.team_name), losing_score))
+            candidates.append(
+                ChallengeCandidate(
+                    str(away_team.team_name),
+                    away_score,
+                    home_score,
+                    opponent_team=str(home_team.team_name),
+                    eligible=away_score < home_score,
+                    rank_value=away_score,
+                )
+            )
         return self._rank(
             "Biggest Loser",
-            "losing team points",
-            "baseline",
+            "team points",
+            "opponent points",
             candidates,
         )
 
@@ -714,7 +839,7 @@ class Challenges:
 
     def gone_but_not_forgotten(self, week: int = 14) -> ChallengeResult:
         """Rank teams seeded 7-12 after the requested week's standings."""
-        standings = cast(list[Any], cast(Any, self.league_data).standings_weekly(week))
+        standings = self._standings(week)
         eligible_teams: dict[int, str] = {}
         for place, team in enumerate(standings, start=1):
             team_id = self._team_id(team)

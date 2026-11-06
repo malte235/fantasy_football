@@ -71,7 +71,7 @@ class FakeLeague:
         self.transaction_calls = []
         self.standings_calls = []
 
-    def box_scores(self, week):
+    def box_scores(self, week, player_team_cache=None):
         self.box_score_calls += 1
         return self._box_scores
 
@@ -115,8 +115,35 @@ def test_score_margin_and_tied_cutoff_rankings():
         "Team 4",
     ]
     assert challenges.largest_margin_winners(1).placements[0].team == "Team 1"
+    assert challenges.largest_margin_winners(1).placements[0].opponent_team == "Team 2"
+    blow_out_loser = next(
+        entry
+        for entry in challenges.largest_margin_winners(1).placements
+        if entry.team == "Team 2"
+    )
+    assert blow_out_loser.opponent_team == "Team 1"
     assert challenges.photo_finish(1).placements[0].team == "Team 3"
+    assert challenges.photo_finish(1).placements[0].opponent_team == "Team 4"
     assert challenges.biggest_loser(1).placements[0].team == "Team 2"
+    assert challenges.biggest_loser(1).placements[0].opponent_team == "Team 1"
+    biggest_loser = challenges.biggest_loser(1).placements[0]
+    assert (biggest_loser.value_1, biggest_loser.value_2, biggest_loser.difference) == (
+        100,
+        110,
+        -10,
+    )
+    biggest_winner = next(
+        entry
+        for entry in challenges.biggest_loser(1).placements
+        if entry.team == "Team 1"
+    )
+    assert biggest_winner.opponent_team == "Team 2"
+    assert not biggest_winner.eligible
+    assert (
+        biggest_winner.value_1,
+        biggest_winner.value_2,
+        biggest_winner.difference,
+    ) == (110, 100, None)
 
     tied_league = FakeLeague(
         [
@@ -127,6 +154,30 @@ def test_score_margin_and_tied_cutoff_rankings():
     tied = make_challenges(tied_league).highest_scoring_team(1).placements
     assert len(tied) == 14
     assert {entry.place for entry in tied} == {1}
+
+
+def test_challenge_instance_reuses_box_scores_for_the_same_week():
+    league = FakeLeague([make_box(make_team(1), make_team(2), 110, 100)])
+    challenges = make_challenges(league)
+
+    challenges.highest_scoring_team(1)
+    challenges.highest_scoring_team(1)
+
+    assert league.box_score_calls == 1
+
+
+def test_challenge_instance_reuses_transactions_across_overlapping_weeks():
+    league = FakeLeague()
+    challenges = make_challenges(league)
+    transaction_types = {"FREEAGENT", "WAIVER"}
+
+    challenges._transactions(range(4, 5), transaction_types)
+    challenges._transactions(range(4, 6), transaction_types)
+
+    assert league.transaction_calls == [
+        (4, transaction_types),
+        (5, transaction_types),
+    ]
 
 
 def test_all_team_challenges_keep_teams_eligible_when_their_score_is_unavailable():
@@ -383,7 +434,7 @@ def test_touchdown_total_sums_each_player_touchdown_category():
     assert result[0].value == sum(touchdown_categories.values())
 
 
-def test_margin_rankings_skip_ties_and_share_places_for_equal_margins():
+def test_blow_out_ranks_signed_margins_but_photo_finish_excludes_losers():
     boxes = [
         make_box(make_team(1), make_team(2), 105, 100),
         make_box(make_team(3), make_team(4), 100, 105),
@@ -395,14 +446,21 @@ def test_margin_rankings_skip_ties_and_share_places_for_equal_margins():
     blow_out = challenges.largest_margin_winners(1).placements
     photo_finish = challenges.photo_finish(1).placements
 
-    assert [(entry.place, entry.value) for entry in blow_out[:3]] == [
+    assert [(entry.place, entry.value) for entry in blow_out[:6]] == [
         (1, 5),
         (1, 5),
         (3, 2),
+        (4, -2),
+        (5, -5),
+        (5, -5),
     ]
     assert all(
-        not entry.eligible and entry.place == 4 and entry.difference is None
-        for entry in blow_out[3:]
+        not entry.eligible
+        and entry.place == 6
+        and entry.difference is None
+        and entry.value_1 is not None
+        and entry.value_2 is not None
+        for entry in blow_out[6:]
     )
     assert [(entry.place, entry.value) for entry in photo_finish[:3]] == [
         (1, 2),
@@ -410,9 +468,30 @@ def test_margin_rankings_skip_ties_and_share_places_for_equal_margins():
         (2, 5),
     ]
     assert all(
-        not entry.eligible and entry.place == 3 and entry.difference is None
+        not entry.eligible
+        and entry.place == 3
+        and entry.difference is None
+        and entry.value_1 is not None
+        and entry.value_2 is not None
         for entry in photo_finish[3:]
     )
+    loser = next(entry for entry in photo_finish if entry.team == "Team 2")
+    assert (loser.value_1, loser.value_2, loser.difference) == (100, 105, None)
+
+
+def test_head_to_head_ties_do_not_pay_ineligible_teams():
+    league = FakeLeague([make_box(make_team(1), make_team(2), 10, 10)])
+
+    result = make_challenges(league).largest_margin_winners(1)
+    result = Challenges._apply_payout(result, 50)
+
+    assert all(not placement.eligible for placement in result.placements)
+    assert all(placement.difference is None for placement in result.placements)
+    assert all(
+        (placement.value_1, placement.value_2) == (10, 10)
+        for placement in result.placements
+    )
+    assert all(placement.payout_dkk == 0 for placement in result.placements)
 
 
 def test_projection_challenges_rank_over_and_absolute_difference_separately():
@@ -590,6 +669,8 @@ def test_consolation_prize_returns_only_the_largest_positive_regret():
     result = make_challenges(league).consolation_prize(1).placements
 
     assert result[0].players == ("Bench TE", "Starting FLEX")
+    assert result[0].player_values == (20.0, 5.0)
+    assert result[0].player_value_indices == (1, 2)
     assert result[0].value == 15
 
 
@@ -751,11 +832,14 @@ def test_filtered_week_four_and_five_results_include_all_twelve_teams():
     assert len(blowout_results) == 12
     losing_teams = {f"Team {team_id}" for team_id in range(2, 13, 2)}
     assert {
-        placement.team for placement in blowout_results if not placement.eligible
+        placement.team for placement in blowout_results if placement.difference == -10
     } == losing_teams
     assert all(
-        placement.place == 2
-        and placement.difference is None
+        placement.eligible
+        and placement.place == 7
+        and placement.value_1 is not None
+        and placement.value_2 is not None
+        and placement.difference == -10
         and placement.players == ()
         for placement in blowout_results
         if placement.team in losing_teams

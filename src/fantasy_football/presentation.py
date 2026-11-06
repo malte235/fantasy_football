@@ -11,8 +11,9 @@ from fantasy_football.challenges.challenges import ChallengePlacement, Challenge
 
 logger = logging.getLogger(__name__)
 
-IMAGE_WIDTH = 2000
-MARGIN = 72
+IMAGE_WIDTH = 1080
+IMAGE_HEIGHT = 2340
+MARGIN = 48
 CONTENT_WIDTH = IMAGE_WIDTH - 2 * MARGIN
 BACKGROUND = "#F1F5F9"
 NAVY = "#12304A"
@@ -20,9 +21,9 @@ HEADER_BLUE = "#163F67"
 TEXT = "#1D344A"
 MUTED = "#5E7388"
 PAYOUT_BLUE = "#1F5F99"
-ROW_WHITE = "#FFFFFF"
-ROW_BLUE = "#F6F9FC"
 BORDER = "#DCE5EE"
+CARD_RADIUS = 12
+BORDER_WIDTH = 1
 COLUMN_HEADERS = (
     "Place",
     "Team",
@@ -32,7 +33,6 @@ COLUMN_HEADERS = (
     "value 2",
     "Players",
 )
-COLUMN_WIDTHS = (140, 320, 190, 150, 300, 270, 476)
 
 
 @dataclass(frozen=True, slots=True)
@@ -153,6 +153,10 @@ def _format_score(value: float | None) -> str:
     return "-" if value is None else f"{value:.2f}"
 
 
+def _format_payout(value: float) -> str:
+    return "-" if value == 0 else f"{value:.2f} DKK"
+
+
 def _capitalize_words_preserving_case(label: str) -> str:
     return " ".join(word[0].upper() + word[1:] for word in label.split())
 
@@ -184,35 +188,57 @@ def _placement_values(
     )
 
 
+def _placement_value_content(
+    placement: ChallengePlacement,
+    value: float | None,
+    value_index: int,
+) -> str:
+    player_values = (
+        placement.player_values
+        if placement.player_values is not None
+        else (placement.value_1,) * len(placement.players)
+    )
+    player_value_indices = (
+        placement.player_value_indices
+        if placement.player_value_indices is not None
+        else (1,) * len(placement.players)
+    )
+    player_entries = [
+        f"{_format_score(player_value)} ({name})" if player_value is not None else name
+        for name, player_value, player_index in zip(
+            placement.players,
+            player_values,
+            player_value_indices,
+            strict=True,
+        )
+        if player_index == value_index
+    ]
+    content = ", ".join(player_entries) if player_entries else _format_score(value)
+    if value_index == 2 and placement.opponent_team is not None:
+        content = f"{content} ({placement.opponent_team})"
+    return content
+
+
 def _draw_medal(
     draw: ImageDraw.ImageDraw,
     center_x: int,
     center_y: int,
-    place: int,
+    place: int | None,
 ) -> None:
     medal_colors = {1: "#E8B84A", 2: "#C5CCD3", 3: "#C98A5B"}
-    color = medal_colors[place]
-    draw.polygon(
-        [
-            (center_x - 14, center_y + 7),
-            (center_x - 8, center_y + 23),
-            (center_x, center_y + 16),
-            (center_x + 8, center_y + 23),
-            (center_x + 14, center_y + 7),
-        ],
-        fill=NAVY,
-    )
+    medal_color = medal_colors.get(place) if place is not None else None
+    color = medal_color or HEADER_BLUE
     draw.ellipse(
-        (center_x - 19, center_y - 19, center_x + 19, center_y + 19),
+        (center_x - 29, center_y - 29, center_x + 29, center_y + 29),
         fill=color,
         outline="#FFFFFF",
-        width=3,
+        width=4,
     )
-    font = _font(20, bold=True)
+    font = _font(28, bold=True)
     draw.text(
         (center_x, center_y),
-        str(place),
-        fill=NAVY,
+        str(place) if place is not None else "-",
+        fill=NAVY if medal_color is not None else "#FFFFFF",
         font=font,
         anchor="mm",
     )
@@ -223,234 +249,233 @@ def _render_image(
     week: int,
     description: ChallengeDescription,
 ) -> Image.Image:
-    title_font = _font(48, bold=True)
-    description_font = _font(23)
-    section_font = _font(17, bold=True)
-    table_header_font = _font(17, bold=True)
-    cell_font = _font(18)
-    bold_cell_font = _font(18, bold=True)
-    payout_font = _font(18, bold=True)
-
+    title_font = _font(40, bold=True)
+    section_font = _font(16, bold=True)
+    team_font = _font(34, bold=True)
+    metric_label_font = _font(14)
+    metric_font = _font(27, bold=True)
+    detail_font = _font(23)
+    description_font = detail_font
     measurement_draw = ImageDraw.Draw(Image.new("RGB", (1, 1)))
-    title = f"Weekly Challenge - Week {week}: {description.name}"
+    title = f"Challenge Week {week}: {description.name}"
     title_lines = _wrap_text(measurement_draw, title, title_font, CONTENT_WIDTH - 48)
-    title_height = len(title_lines) * 58
-    header_height = max(190, 62 + title_height + 40)
+    title_height = len(title_lines) * 48
+    header_height = max(138, 35 + title_height + 20)
     description_lines = _wrap_text(
         measurement_draw,
         description.explanation,
         description_font,
         CONTENT_WIDTH - 72,
     )
-    description_card_top = header_height + 34
-    description_card_height = 74 + len(description_lines) * 34 + 72
-    description_card_bottom = description_card_top + description_card_height
-
-    image = Image.new(
-        "RGB",
-        (IMAGE_WIDTH, description_card_bottom + 10),
-        BACKGROUND,
+    exclusions_lines = _wrap_text(
+        measurement_draw,
+        description.excluded_positions,
+        description_font,
+        CONTENT_WIDTH - 72,
     )
-    draw = ImageDraw.Draw(image)
+    description_top = header_height + 18
+    description_text_top = description_top + 19
+    description_line_spacing = 29
+    exclusions_label_top = (
+        description_text_top + len(description_lines) * description_line_spacing + 8
+    )
+    exclusions_text_top = exclusions_label_top + 17
+    description_bottom = (
+        exclusions_text_top + len(exclusions_lines) * description_line_spacing
+    )
+
+    inner_width = CONTENT_WIDTH - 48
+    team_width = inner_width - 2 * 178 - 64
+    placement_headers = _table_headers(result)
+    detail_labels = (placement_headers[4], placement_headers[5])
+    value_column_offset = int(
+        max(
+            measurement_draw.textlength(f"{label}:", font=detail_font)
+            for label in detail_labels
+        )
+        + 16.5
+    )
+    value_column_width = inner_width - value_column_offset
+    card_data: list[
+        tuple[ChallengePlacement, list[str], list[str], list[str], int]
+    ] = []
+    for placement in result.placements:
+        values = _placement_values(result, placement)
+        team_lines = _wrap_text(measurement_draw, values[1], team_font, team_width)
+        detail_1_lines = _wrap_text(
+            measurement_draw,
+            _placement_value_content(placement, placement.value_1, 1),
+            detail_font,
+            value_column_width,
+        )
+        detail_2_lines = _wrap_text(
+            measurement_draw,
+            _placement_value_content(placement, placement.value_2, 2),
+            detail_font,
+            value_column_width,
+        )
+        detail_line_count = len(detail_1_lines) + len(detail_2_lines)
+        card_data.append(
+            (placement, team_lines, detail_1_lines, detail_2_lines, detail_line_count)
+        )
+
+    card_gap = 7
+    cards_top = description_bottom + 18
+    bottom_margin = 32
+    card_height = min(
+        166,
+        (
+            IMAGE_HEIGHT
+            - bottom_margin
+            - cards_top
+            - max(0, len(card_data) - 1) * card_gap
+        )
+        // max(1, len(card_data)),
+    )
+    canvas = Image.new("RGB", (IMAGE_WIDTH, IMAGE_HEIGHT), BACKGROUND)
+    draw = ImageDraw.Draw(canvas)
     draw.rectangle((0, 0, IMAGE_WIDTH, header_height), fill=NAVY)
     for line, title_y in zip(
         title_lines,
-        _centered_line_centers(0, header_height, len(title_lines), 58),
+        _centered_line_centers(0, header_height, len(title_lines), 48),
         strict=True,
     ):
         draw.text(
-            (MARGIN + 34, title_y),
+            (IMAGE_WIDTH // 2, title_y),
             line,
             fill="#FFFFFF",
             font=title_font,
-            anchor="lm",
+            anchor="mm",
         )
 
-    draw.rounded_rectangle(
-        (
-            MARGIN,
-            description_card_top,
-            IMAGE_WIDTH - MARGIN,
-            description_card_bottom,
-        ),
-        radius=18,
-        fill="#FFFFFF",
-        outline=BORDER,
-        width=2,
-    )
-    card_x = MARGIN + 36
-    text_y = description_card_top + 24
+    text_x = MARGIN + 24
     draw.text(
-        (card_x, text_y),
+        (text_x, description_top),
         "CHALLENGE DESCRIPTION",
         fill=MUTED,
         font=section_font,
     )
-    text_y += 31
-    for line in description_lines:
-        draw.text((card_x, text_y), line, fill=TEXT, font=description_font)
-        text_y += 34
-    text_y += 10
+    for line_index, line in enumerate(description_lines):
+        draw.text(
+            (text_x, description_text_top + line_index * description_line_spacing),
+            line,
+            fill=TEXT,
+            font=description_font,
+        )
     draw.text(
-        (card_x, text_y),
+        (text_x, exclusions_label_top),
         "EXCLUDED POSITIONS",
         fill=MUTED,
         font=section_font,
     )
-    text_y += 26
-    draw.text(
-        (card_x, text_y),
-        description.excluded_positions,
-        fill=TEXT,
-        font=description_font,
-    )
-
-    table_top = description_card_bottom + 34
-    header_height = 64
-    row_data: list[tuple[ChallengePlacement, list[list[str]]]] = []
-    placements = list(result.placements)
-    for placement in placements:
-        wrapped_values = [
-            _wrap_text(draw, value, cell_font, column_width - 28)
-            for value, column_width in zip(
-                _placement_values(result, placement),
-                COLUMN_WIDTHS,
-                strict=True,
-            )
-        ]
-        row_data.append((placement, wrapped_values))
-
-    table_bottom = (
-        table_top
-        + header_height
-        + sum(
-            max(64, max(len(lines) for lines in row) * 27 + 22) for _, row in row_data
+    for line_index, line in enumerate(exclusions_lines):
+        draw.text(
+            (text_x, exclusions_text_top + line_index * description_line_spacing),
+            line,
+            fill=TEXT,
+            font=description_font,
         )
-    )
-    if not row_data:
-        table_bottom += 86
-    image_height = table_bottom + 75
-    canvas = Image.new("RGB", (IMAGE_WIDTH, image_height), BACKGROUND)
-    canvas.paste(image.crop((0, 0, IMAGE_WIDTH, description_card_bottom + 10)), (0, 0))
-    draw = ImageDraw.Draw(canvas)
 
-    draw.rounded_rectangle(
-        (MARGIN, table_top, IMAGE_WIDTH - MARGIN, table_top + header_height),
-        radius=12,
-        fill=HEADER_BLUE,
-    )
-    column_x = MARGIN
-    for column_index, (header, column_width) in enumerate(
-        zip(_table_headers(result), COLUMN_WIDTHS, strict=True)
-    ):
-        header_lines = _wrap_text(draw, header, table_header_font, column_width - 24)
-        line_height = 23
-        for line, header_y in zip(
-            header_lines,
+    for row_index, (
+        placement,
+        team_lines,
+        detail_1_lines,
+        detail_2_lines,
+        detail_line_count,
+    ) in enumerate(card_data):
+        card_top = cards_top + row_index * (card_height + card_gap)
+        card_left = MARGIN
+        card_right = IMAGE_WIDTH - MARGIN
+        draw.rounded_rectangle(
+            (card_left, card_top, card_right, card_top + card_height),
+            radius=CARD_RADIUS,
+            fill="#FFFFFF",
+            outline=BORDER,
+            width=BORDER_WIDTH,
+        )
+        inner_left = card_left + 24
+        inner_right = card_right - 24
+        content_height = 64 + 10 + detail_line_count * 28 + 10
+        content_top = card_top + (card_height - content_height) / 2
+        headline_y = content_top + 32
+        _draw_medal(
+            draw,
+            inner_left + 29,
+            round(headline_y),
+            placement.place,
+        )
+        team_x = inner_left + 75
+        for line, line_y in zip(
+            team_lines,
             _centered_line_centers(
-                table_top,
-                header_height,
-                len(header_lines),
-                line_height,
+                round(headline_y) - len(team_lines) * 13,
+                26 * len(team_lines),
+                len(team_lines),
+                26,
             ),
             strict=True,
         ):
-            if column_index == 0:
-                draw.text(
-                    (column_x + column_width // 2, header_y),
-                    line,
-                    fill="#FFFFFF",
-                    font=table_header_font,
-                    anchor="mm",
-                )
-            else:
-                draw.text(
-                    (column_x + 14, header_y),
-                    line,
-                    fill="#FFFFFF",
-                    font=table_header_font,
-                    anchor="lm",
-                )
-        column_x += column_width
+            draw.text((team_x, line_y), line, fill=TEXT, font=team_font, anchor="lm")
 
-    row_top = table_top + header_height
-    medal_backgrounds = {1: "#FFF5D6", 2: "#F0F2F4", 3: "#F8EDE5"}
-    for row_index, (placement, row) in enumerate(row_data):
-        row_height = max(64, max(len(lines) for lines in row) * 27 + 22)
-        medal_place = placement.place if placement.difference is not None else None
-        row_background = medal_backgrounds.get(
-            medal_place,
-            ROW_WHITE if row_index % 2 == 0 else ROW_BLUE,
+        metric_specs = (
+            ("SCORE", _format_score(placement.difference), TEXT, inner_right - 344),
+            (
+                "PAYOUT",
+                _format_payout(placement.payout_dkk),
+                PAYOUT_BLUE,
+                inner_right,
+            ),
         )
-        draw.rectangle(
-            (MARGIN, row_top, IMAGE_WIDTH - MARGIN, row_top + row_height),
-            fill=row_background,
-        )
-        column_x = MARGIN
-        for column_index, (lines, column_width) in enumerate(
-            zip(row, COLUMN_WIDTHS, strict=True)
-        ):
-            if (
-                column_index == 0
-                and medal_place is not None
-                and medal_place in medal_backgrounds
-            ):
-                _draw_medal(
-                    draw,
-                    column_x + column_width // 2,
-                    row_top + row_height // 2,
-                    medal_place,
-                )
-            else:
-                font = bold_cell_font if column_index in {0, 1, 3} else cell_font
-                if column_index == 2:
-                    font = payout_font
-                fill = (
-                    PAYOUT_BLUE if column_index == 2 and placement.payout_dkk else TEXT
-                )
-                line_height = 27
-                for line, text_y in zip(
-                    lines,
-                    _centered_line_centers(
-                        row_top,
-                        row_height,
-                        len(lines),
-                        line_height,
+        for label, value, color, metric_left in metric_specs:
+            is_payout = label == "PAYOUT"
+            draw.text(
+                (metric_left, headline_y - 32),
+                label,
+                fill=MUTED,
+                font=metric_label_font,
+                anchor="ra" if is_payout else "la",
+            )
+            draw.text(
+                (metric_left, headline_y),
+                value,
+                fill=color,
+                font=metric_font,
+                anchor="rm" if is_payout else "lm",
+            )
+
+        detail_top = content_top + 64 + 10
+        for label, lines in zip(detail_labels, (detail_1_lines, detail_2_lines)):
+            draw.text(
+                (inner_left, detail_top),
+                f"{label}:",
+                fill=TEXT,
+                font=detail_font,
+            )
+            for line_index, line in enumerate(lines):
+                draw.text(
+                    (
+                        inner_left + value_column_offset,
+                        detail_top + line_index * 28,
                     ),
-                    strict=True,
-                ):
-                    if column_index == 0:
-                        draw.text(
-                            (column_x + column_width // 2, text_y),
-                            line,
-                            fill=fill,
-                            font=font,
-                            anchor="mm",
-                        )
-                    else:
-                        draw.text(
-                            (column_x + 14, text_y),
-                            line,
-                            fill=fill,
-                            font=font,
-                            anchor="lm",
-                        )
-            column_x += column_width
-        draw.line(
-            (MARGIN, row_top + row_height, IMAGE_WIDTH - MARGIN, row_top + row_height),
-            fill=BORDER,
-            width=1,
-        )
-        row_top += row_height
+                    line,
+                    fill=TEXT,
+                    font=detail_font,
+                )
+            detail_top += max(1, len(lines)) * 28 + 5
 
-    if not row_data:
+    if not card_data:
         draw.rounded_rectangle(
-            (MARGIN, row_top, IMAGE_WIDTH - MARGIN, row_top + 86),
+            (
+                MARGIN,
+                cards_top,
+                IMAGE_WIDTH - MARGIN,
+                cards_top + 72,
+            ),
             radius=12,
             fill="#FFFFFF",
         )
         draw.text(
-            (IMAGE_WIDTH // 2, row_top + 43),
+            (IMAGE_WIDTH // 2, cards_top + 36),
             "No eligible teams to rank yet",
             fill=MUTED,
             font=description_font,

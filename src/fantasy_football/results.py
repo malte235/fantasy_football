@@ -13,6 +13,7 @@ CSVColumn = Literal[
     "challenge",
     "status",
     "team",
+    "opponent_team",
     "eligible",
     "value_1_label",
     "value_1",
@@ -35,6 +36,7 @@ CSV_COLUMNS: tuple[CSVColumn, ...] = (
     "challenge",
     "status",
     "team",
+    "opponent_team",
     "eligible",
     "value_1_label",
     "value_1",
@@ -63,6 +65,7 @@ def _placement_row(
         "challenge": result.challenge,
         "status": "final" if result.is_final else "provisional",
         "team": placement.team,
+        "opponent_team": placement.opponent_team or "",
         "eligible": str(placement.eligible).lower(),
         "value_1_label": result.value_1_label,
         "value_1": "" if placement.value_1 is None else placement.value_1,
@@ -72,7 +75,30 @@ def _placement_row(
         "difference": "" if placement.difference is None else placement.difference,
         "rank_order": result.rank_order,
         "place": "" if placement.place is None else placement.place,
-        "players": json.dumps(list(placement.players), ensure_ascii=False),
+        "players": json.dumps(
+            [
+                {
+                    "name": name,
+                    "value": value,
+                    "value_label": (
+                        result.value_1_label
+                        if value_index == 1
+                        else result.value_2_label
+                    ),
+                }
+                for name, value, value_index in zip(
+                    placement.players,
+                    placement.player_values
+                    if placement.player_values is not None
+                    else (placement.value_1,) * len(placement.players),
+                    placement.player_value_indices
+                    if placement.player_value_indices is not None
+                    else (1,) * len(placement.players),
+                    strict=True,
+                )
+            ],
+            ensure_ascii=False,
+        ),
         "details": placement.details or "",
         "payout_dkk": f"{placement.payout_dkk:.2f}",
         "note": result.note or "",
@@ -89,14 +115,17 @@ def write_weekly_results(
     result_path.mkdir(parents=True, exist_ok=True)
     output_file = result_path / f"challenge_rankings_weekly_{season}.csv"
     existing_rows: list[CSVRow] = []
+    legacy_columns = tuple(
+        column for column in CSV_COLUMNS if column != "opponent_team"
+    )
 
     if output_file.exists():
         with output_file.open("r", newline="", encoding="utf-8") as csv_file:
             reader = csv.DictReader(csv_file)
-            if (
-                reader.fieldnames is not None
-                and tuple(reader.fieldnames) != CSV_COLUMNS
-            ):
+            if reader.fieldnames is not None and tuple(reader.fieldnames) not in {
+                CSV_COLUMNS,
+                legacy_columns,
+            }:
                 raise ValueError(
                     f"Existing results file {output_file} has an unexpected CSV "
                     "header; refusing to overwrite it."
@@ -113,7 +142,9 @@ def write_weekly_results(
                         "without a valid week."
                     ) from error
                 if row_week != week:
-                    if any(row.get(column) is None for column in CSV_COLUMNS):
+                    if any(
+                        row.get(column) is None for column in reader.fieldnames or ()
+                    ):
                         raise ValueError(
                             f"Existing results file {output_file} contains a "
                             "malformed row."
@@ -121,7 +152,7 @@ def write_weekly_results(
                     existing_rows.append(
                         cast(
                             CSVRow,
-                            {column: row[column] for column in CSV_COLUMNS},
+                            {column: row.get(column, "") for column in CSV_COLUMNS},
                         )
                     )
 

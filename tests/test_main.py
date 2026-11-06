@@ -1,3 +1,4 @@
+import csv
 import json
 import logging
 import sys
@@ -36,7 +37,7 @@ def test_run_weekly_challenge_uses_current_espn_week_and_returns_json_data(caplo
     league = SimpleNamespace(
         current_week=1,
         teams=[home_team, away_team],
-        box_scores=lambda week: [box_score],
+        box_scores=lambda week, player_team_cache=None: [box_score],
     )
 
     config = AppConfig(
@@ -78,7 +79,9 @@ def test_run_weekly_challenge_uses_explicit_week_instead_of_current_espn_week():
     league = SimpleNamespace(
         current_week=1,
         teams=[],
-        box_scores=lambda week: requested_box_score_weeks.append(week) or [],
+        box_scores=lambda week, player_team_cache=None: (
+            requested_box_score_weeks.append(week) or []
+        ),
     )
     config = AppConfig(
         league=LeagueConfig(id=561666376, season=2026),
@@ -124,7 +127,7 @@ def test_run_weekly_challenge_splits_payout_among_first_place_teams_and_rounds_t
     league = SimpleNamespace(
         current_week=1,
         teams=teams,
-        box_scores=lambda week: box_scores,
+        box_scores=lambda week, player_team_cache=None: box_scores,
     )
     config = AppConfig(
         league=LeagueConfig(id=561666376, season=2026),
@@ -153,7 +156,7 @@ def test_run_weekly_challenge_awards_no_payout_without_scored_results():
     league = SimpleNamespace(
         current_week=17,
         teams=teams,
-        box_scores=lambda week: [],
+        box_scores=lambda week, player_team_cache=None: [],
     )
     config = AppConfig(
         league=LeagueConfig(id=561666376, season=2026),
@@ -194,7 +197,7 @@ def test_run_weekly_challenge_pays_current_leader_for_provisional_results():
     league = SimpleNamespace(
         current_week=15,
         teams=[home_team, away_team],
-        box_scores=lambda week: [box_score],
+        box_scores=lambda week, player_team_cache=None: [box_score],
     )
     config = AppConfig(
         league=LeagueConfig(id=561666376, season=2026),
@@ -229,7 +232,7 @@ def test_cli_writes_the_result_to_the_configured_csv_path(
     league = SimpleNamespace(
         current_week=1,
         teams=[home_team, away_team],
-        box_scores=lambda week: [box_score],
+        box_scores=lambda week, player_team_cache=None: [box_score],
     )
     config_path = tmp_path / "config.yaml"
     config_path.write_text(
@@ -257,6 +260,70 @@ def test_cli_writes_the_result_to_the_configured_csv_path(
     ]
 
 
+def test_cli_runs_multiple_configured_weeks_in_one_process(
+    tmp_path, monkeypatch, capsys
+):
+    home_team = SimpleNamespace(team_id=1, team_name="Team 1")
+    away_team = SimpleNamespace(team_id=2, team_name="Team 2")
+    box_scores = {
+        week: SimpleNamespace(
+            home_team=home_team,
+            away_team=away_team,
+            home_score=120 - week,
+            away_score=105,
+            home_projected=110,
+            away_projected=100,
+            home_lineup=[],
+            away_lineup=[],
+        )
+        for week in (1, 2)
+    }
+    requested_box_score_weeks = []
+    league = SimpleNamespace(
+        current_week=2,
+        teams=[home_team, away_team],
+        box_scores=lambda week, player_team_cache=None: (
+            requested_box_score_weeks.append(week) or [box_scores[week]]
+        ),
+    )
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        "league:\n  id: 12345\n  season: 2027\n"
+        "payout:\n  amount_dkk: 50\n"
+        "data:\n  result_path: weekly-results\n"
+        "challenges:\n  1: highest_scoring_team\n  2: highest_scoring_team\n",
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "fantasy-football",
+            "--config",
+            str(config_path),
+            "--weeks",
+            "1",
+            "2",
+        ],
+    )
+    monkeypatch.setattr(main_module, "League", lambda *args, **kwargs: league)
+
+    main_module.main()
+
+    output_file = tmp_path / "weekly-results" / "challenge_rankings_weekly_2027.csv"
+    with output_file.open(newline="", encoding="utf-8") as csv_file:
+        rows = list(csv.DictReader(csv_file))
+    assert {row["week"] for row in rows} == {"1", "2"}
+    assert requested_box_score_weeks == [1, 2]
+    assert capsys.readouterr().out.strip().splitlines() == [
+        str(Path("weekly-results") / output_file.name),
+        str(Path("weekly-results") / "images" / "weekly_challenge_2027_week_01.png"),
+        str(Path("weekly-results") / output_file.name),
+        str(Path("weekly-results") / "images" / "weekly_challenge_2027_week_02.png"),
+    ]
+
+
 def test_cli_previous_week_uses_week_before_espn_current_week(
     tmp_path, monkeypatch, capsys
 ):
@@ -264,7 +331,9 @@ def test_cli_previous_week_uses_week_before_espn_current_week(
     league = SimpleNamespace(
         current_week=9,
         teams=[],
-        box_scores=lambda week: requested_box_score_weeks.append(week) or [],
+        box_scores=lambda week, player_team_cache=None: (
+            requested_box_score_weeks.append(week) or []
+        ),
     )
     config_path = tmp_path / "config.yaml"
     config_path.write_text(

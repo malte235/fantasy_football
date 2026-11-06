@@ -38,6 +38,12 @@ def main() -> None:
         action="store_true",
         help="Run the scoring week immediately before ESPN's current scoring week.",
     )
+    week_group.add_argument(
+        "--weeks",
+        nargs="+",
+        type=int,
+        help="Run multiple configured scoring weeks (for example: --weeks 1 2 3).",
+    )
     args = parser.parse_args()
     logger.info("Starting weekly fantasy challenge run.")
     logger.info("Loading application config from %s.", args.config)
@@ -46,6 +52,15 @@ def main() -> None:
     except ConfigError as error:
         logger.error("Configuration loading failed: %s", error)
         parser.error(str(error))
+    if args.weeks is not None:
+        if len(set(args.weeks)) != len(args.weeks):
+            parser.error("--weeks cannot contain duplicate weeks.")
+        missing_weeks = sorted(set(args.weeks) - config.challenges.keys())
+        if missing_weeks:
+            parser.error(
+                f"No challenge is configured for weeks {missing_weeks}. "
+                f"Configured weeks: {sorted(config.challenges)}."
+            )
     logger.info(
         "Creating ESPN league client for league %s, season %s.",
         config.league.id,
@@ -72,26 +87,32 @@ def main() -> None:
             week_override,
             current_week,
         )
-    week, result = Challenges(league).execute(
-        config.challenges,
-        config.payout.amount_dkk,
-        week_override,
-    )
-    output_file = write_weekly_results(
-        result,
-        config.league.season,
-        week,
-        config.data.result_path,
-    )
-    logger.info("Updated weekly challenge CSV at %s.", output_file)
-    image_file = write_weekly_challenge_image(
-        result,
-        config.league.season,
-        week,
-        config.data.result_path,
-    )
-    print(output_file)
-    print(image_file)
+    week_overrides = args.weeks if args.weeks is not None else [week_override]
+    challenges = Challenges(league)
+    weekly_results = [
+        challenges.execute(
+            config.challenges,
+            config.payout.amount_dkk,
+            week_override,
+        )
+        for week_override in week_overrides
+    ]
+    for week, result in weekly_results:
+        output_file = write_weekly_results(
+            result,
+            config.league.season,
+            week,
+            config.data.result_path,
+        )
+        logger.info("Updated weekly challenge CSV at %s.", output_file)
+        image_file = write_weekly_challenge_image(
+            result,
+            config.league.season,
+            week,
+            config.data.result_path,
+        )
+        print(output_file)
+        print(image_file)
     logger.info("Weekly fantasy challenge run completed.")
 
 

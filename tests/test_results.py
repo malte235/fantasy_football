@@ -1,10 +1,15 @@
 import csv
+import json
 from types import SimpleNamespace
 from typing import Any, cast
 
 import pytest
 
-from fantasy_football.challenges.challenges import Challenges
+from fantasy_football.challenges.challenges import (
+    ChallengePlacement,
+    ChallengeResult,
+    Challenges,
+)
 from fantasy_football.results import CSV_COLUMNS, write_weekly_results
 
 
@@ -27,7 +32,7 @@ def make_result(
     )
     league = SimpleNamespace(
         teams=[home, away],
-        box_scores=lambda week: [box_score],
+        box_scores=lambda week, player_team_cache=None: [box_score],
     )
     return getattr(Challenges(cast(Any, league)), challenge)(1)
 
@@ -56,6 +61,7 @@ def test_csv_is_created_with_calculation_and_eligibility_columns(tmp_path):
 
     assert len(rows) == 2
     assert rows[0]["team"] == "Team 1"
+    assert rows[0]["opponent_team"] == ""
     assert rows[0]["eligible"] == "true"
     assert rows[0]["value_1_label"] == "team points"
     assert rows[0]["value_1"] == "110.0"
@@ -114,12 +120,85 @@ def test_csv_distinguishes_ineligible_teams_from_zero_values(tmp_path):
     assert winner["eligible"] == "true"
     assert winner["value_1"] == "110.0"
     assert winner["value_2"] == "100.0"
+    assert winner["value_1_label"] == "team points"
+    assert winner["value_2_label"] == "opponent points"
+    assert winner["opponent_team"] == "Team 2"
     assert winner["difference"] == "10.0"
-    assert loser["eligible"] == "false"
-    assert loser["value_1"] == ""
-    assert loser["value_2"] == ""
-    assert loser["difference"] == ""
+    assert loser["eligible"] == "true"
+    assert loser["value_1"] == "100.0"
+    assert loser["value_2"] == "110.0"
+    assert loser["difference"] == "-10.0"
     assert loser["place"] == "2"
+    assert loser["opponent_team"] == "Team 1"
+
+
+def test_csv_migrates_existing_rows_without_opponent_column(tmp_path):
+    output_file = tmp_path / "challenge_rankings_weekly_2026.csv"
+    output_file.write_text(
+        ",".join(column for column in CSV_COLUMNS if column != "opponent_team")
+        + "\n"
+        + "2026,1,Top Scorer,final,Team 1,true,team points,110,baseline,0,"
+        + "subtract,110,descending,1,[],,0.00,\n",
+        encoding="utf-8",
+    )
+
+    write_weekly_results(
+        make_result(90, 85),
+        season=2026,
+        week=2,
+        result_path=tmp_path,
+    )
+
+    rows = read_rows(output_file)
+    assert [(row["week"], row["opponent_team"]) for row in rows] == [
+        ("1", ""),
+        ("2", ""),
+        ("2", ""),
+    ]
+
+
+def test_csv_stores_players_with_their_values_and_value_labels(tmp_path):
+    result = ChallengeResult(
+        challenge="Consolation Prize",
+        value_1_label="bench player points",
+        value_2_label="comparable starter points",
+        operation="subtract",
+        rank_order="descending",
+        placements=(
+            ChallengePlacement(
+                place=1,
+                team="Team 1",
+                eligible=True,
+                value_1=20,
+                value_2=5,
+                difference=15,
+                players=("Bench TE", "Starting FLEX"),
+                player_values=(20, 5),
+                player_value_indices=(1, 2),
+            ),
+        ),
+    )
+
+    output_file = write_weekly_results(
+        result,
+        season=2026,
+        week=7,
+        result_path=tmp_path,
+    )
+
+    row = read_rows(output_file)[0]
+    assert json.loads(row["players"]) == [
+        {
+            "name": "Bench TE",
+            "value": 20,
+            "value_label": "bench player points",
+        },
+        {
+            "name": "Starting FLEX",
+            "value": 5,
+            "value_label": "comparable starter points",
+        },
+    ]
 
 
 def test_csv_refuses_to_overwrite_an_unrecognized_header(tmp_path):
