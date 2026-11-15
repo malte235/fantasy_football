@@ -8,6 +8,11 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_valida
 
 logger = logging.getLogger(__name__)
 
+DEFAULT_ANNOUNCEMENT_PROMPT = (
+    "Write a concise, funny, friendly message announcing the next fantasy football "
+    "challenge."
+)
+
 
 class ChallengeName(StrEnum):
     HIGHEST_SCORING_TEAM = "highest_scoring_team"
@@ -52,12 +57,27 @@ class DataConfig(BaseModel):
     result_path: Path = Path("data/results")
 
 
+class GeminiConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    model: str = Field(default="gemini-4-hydrogen", min_length=1)
+    announcement_prompt: str = Field(default=DEFAULT_ANNOUNCEMENT_PROMPT, min_length=1)
+
+    @field_validator("announcement_prompt")
+    @classmethod
+    def validate_announcement_prompt(cls, prompt: str) -> str:
+        if not prompt.strip():
+            raise ValueError("announcement_prompt must not be blank.")
+        return prompt
+
+
 class AppConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     league: LeagueConfig
     payout: PayoutConfig
     data: DataConfig = Field(default_factory=DataConfig)
+    gemini: GeminiConfig = Field(default_factory=GeminiConfig)
     challenges: dict[int, ChallengeName] = Field(min_length=1)
 
     @field_validator("challenges")

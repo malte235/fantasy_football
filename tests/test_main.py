@@ -350,6 +350,11 @@ def test_cli_previous_week_uses_week_before_espn_current_week(
         ["fantasy-football", "--config", str(config_path), "--previous-week"],
     )
     monkeypatch.setattr(main_module, "League", lambda *args, **kwargs: league)
+    monkeypatch.setattr(
+        main_module,
+        "generate_league_announcement",
+        lambda **kwargs: "League message",
+    )
 
     main_module.main()
 
@@ -357,12 +362,26 @@ def test_cli_previous_week_uses_week_before_espn_current_week(
     image_file = (
         tmp_path / "weekly-results" / "images" / "weekly_challenge_2027_week_08.png"
     )
+    announcement_file = (
+        tmp_path
+        / "weekly-results"
+        / "announcements"
+        / "league_announcement_2027_week_08.txt"
+    )
     assert requested_box_score_weeks == [8]
     assert output_file.exists()
     assert image_file.exists()
+    assert announcement_file.read_text(encoding="utf-8") == "League message\n"
     assert capsys.readouterr().out.strip().splitlines() == [
         str(Path("weekly-results") / output_file.name),
         str(Path("weekly-results") / "images" / "weekly_challenge_2027_week_08.png"),
+        str(
+            Path("weekly-results")
+            / "announcements"
+            / "league_announcement_2027_week_08.txt"
+        ),
+        "Message to send to the league:",
+        "League message",
     ]
 
 
@@ -390,6 +409,8 @@ def test_load_config_parses_and_logs_config_before_and_after_validation(
         "league:\n  id: 12345\n  season: 2027\n"
         "payout:\n  amount_dkk: 50\n"
         "data:\n  result_path: output/results\n"
+        "gemini:\n  model: gemini-test-model\n"
+        '  announcement_prompt: "Write a test announcement."\n'
         "challenges:\n  1: blackjack\n",
         encoding="utf-8",
     )
@@ -401,6 +422,8 @@ def test_load_config_parses_and_logs_config_before_and_after_validation(
     assert config.league.season == 2027
     assert config.payout.amount_dkk == 50
     assert config.data.result_path == Path("output/results")
+    assert config.gemini.model == "gemini-test-model"
+    assert config.gemini.announcement_prompt == "Write a test announcement."
     assert config.challenges == {1: ChallengeName.BLACKJACK}
     assert f"Raw config file contents from {config_path}" in caplog.text
     assert "Pydantic validated config" in caplog.text

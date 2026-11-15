@@ -48,6 +48,17 @@ afterwards, followed by ESPN initialization, week/challenge selection,
 challenge execution, and CSV/image writing. The CLI prints both output paths.
 Do not put credentials or other secrets in the YAML config; use environment
 variables instead.
+After a challenge run, the CLI uses `gemini.model` and the editable
+`gemini.announcement_prompt` from the YAML config, plus the `GEMINI_API_KEY`
+environment variable, to generate a funny league message. Prior challenge
+results provide context without recapping every week; the message announces the
+winner(s) or provisional leader(s) for the week just run and then previews the
+next configured challenge. The full current-week standings are provided for
+useful player, score, payout, and runner-up highlights. Shared first places
+contribute an evenly split win share. It saves the message under
+`data/results/announcements` as
+`league_announcement_<season>_week_<week>.txt`; rerunning a week replaces that
+week's announcement.
 
 The CLI entry point and config loading are in `src/fantasy_football/main.py`.
 The `Challenges.execute()` method selects and runs the configured challenge,

@@ -8,6 +8,21 @@ payout:
 data:
   result_path: data/results
 
+gemini:
+  model: gemini-4-hydrogen
+  announcement_prompt: |
+    Write one funny, friendly, ready-to-send message for a fantasy football league
+    group chat focused on announcing the next challenge. Use the completed challenge
+    list and cumulative win shares only as background for a brief good-natured joke
+    if useful. Do not recap prior weeks or list past winners. Win shares divide one
+    win evenly among all teams tied for first in each completed challenge. Use only
+    supplied facts. Clearly announce the winner(s) from the current run week result;
+    call tied teams co-winners. If the result is provisional, call them current
+    leaders rather than final winners. Use the full current-week results to include
+    the decisive player and stat, and payout when available. Mention the runner-up
+    and score gap only when useful and comparable; do not list every team. Then
+    announce the next challenge's week, name, and rules. Keep the message concise.
+
 challenges:
   1: highest_scoring_team
   2: blackjack

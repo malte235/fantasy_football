@@ -6,6 +6,10 @@ from typing import Any, cast
 
 from espn_api.football import League  # type: ignore[import-not-found]
 
+from fantasy_football.announcement import (
+    generate_league_announcement,
+    write_league_announcement,
+)
 from fantasy_football.challenges.challenges import Challenges
 from fantasy_football.config import ConfigError, load_config
 from fantasy_football.presentation import write_weekly_challenge_image
@@ -113,6 +117,25 @@ def main() -> None:
         )
         print(output_file)
         print(image_file)
+    announcement = generate_league_announcement(
+        model=config.gemini.model,
+        announcement_prompt=config.gemini.announcement_prompt,
+        season=config.league.season,
+        current_week=max(week for week, _ in weekly_results),
+        challenges=config.challenges,
+        result_path=config.data.result_path,
+    )
+    if announcement is not None:
+        announcement_file = write_league_announcement(
+            announcement,
+            config.league.season,
+            max(week for week, _ in weekly_results),
+            config.data.result_path,
+        )
+        logger.info("Saved league announcement to %s.", announcement_file)
+        print(announcement_file)
+        print("Message to send to the league:")
+        print(announcement)
     logger.info("Weekly fantasy challenge run completed.")
 
 
