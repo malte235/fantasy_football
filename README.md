@@ -54,8 +54,10 @@ environment variable, to generate a funny league message. Prior challenge
 results provide context without recapping every week; the message announces the
 winner(s) or provisional leader(s) for the week just run and then previews the
 next configured challenge. The full current-week standings are provided for
-useful player, score, payout, and runner-up highlights. Shared first places
-contribute an evenly split win share. It saves the message under
+useful player, score, payout, and runner-up highlights. Prior results include
+cumulative wins, with tied first places splitting one win evenly; those totals
+are rounded to two decimal places for the announcement context. It saves the
+message under
 `data/results/announcements` as
 `league_announcement_<season>_week_<week>.txt`; rerunning a week replaces that
 week's announcement.

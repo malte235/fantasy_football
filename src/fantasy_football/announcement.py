@@ -4,7 +4,7 @@ import logging
 import os
 import tempfile
 from collections.abc import Mapping
-from decimal import Decimal, InvalidOperation
+from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from fractions import Fraction
 from pathlib import Path
 from typing import TypedDict
@@ -29,9 +29,14 @@ class _ChallengeSummary(TypedDict):
     challenge: str
 
 
+class _WinTotal(TypedDict):
+    team: str
+    wins: str
+
+
 class _HistoryContext(TypedDict):
     completed_challenges: list[_ChallengeSummary]
-    win_shares: dict[str, int | str]
+    wins: list[_WinTotal]
 
 
 class _CurrentWeekResult(TypedDict):
@@ -169,18 +174,18 @@ def _read_challenge_context(
             for team in winners:
                 team_shares[team] = team_shares.get(team, Fraction()) + share
 
-    win_shares = {
-        team: share.numerator
-        if share.denominator == 1
-        else f"{share.numerator}/{share.denominator}"
-        for team, share in sorted(
-            team_shares.items(), key=lambda item: (-item[1], item[0])
-        )
-    }
+    win_totals: list[_WinTotal] = []
+    for team, share in sorted(
+        team_shares.items(), key=lambda item: (-item[1], item[0])
+    ):
+        rounded_total = (
+            Decimal(share.numerator) / Decimal(share.denominator)
+        ).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        win_totals.append({"team": team, "wins": f"{rounded_total:.2f}"})
     return (
         {
             "completed_challenges": completed_challenges,
-            "win_shares": win_shares,
+            "wins": win_totals,
         },
         current_result,
     )

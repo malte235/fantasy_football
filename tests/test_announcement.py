@@ -196,11 +196,11 @@ def test_announcement_uses_current_week_full_results_and_next_challenge(
     history = json.loads(history_text)
     assert history == {
         "completed_challenges": [{"week": 1, "challenge": "Top Scorer"}],
-        "win_shares": {
-            "Team Alpha": "1/3",
-            "Team Beta": "1/3",
-            "Team Gamma": "1/3",
-        },
+        "wins": [
+            {"team": "Team Alpha", "wins": "0.33"},
+            {"team": "Team Beta", "wins": "0.33"},
+            {"team": "Team Gamma", "wins": "0.33"},
+        ],
     }
 
 
