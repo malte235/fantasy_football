@@ -9,8 +9,9 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_valida
 logger = logging.getLogger(__name__)
 
 DEFAULT_ANNOUNCEMENT_PROMPT = (
-    "Write a concise, funny, friendly message announcing the next fantasy football "
-    "challenge."
+    "Write a concise, funny, friendly WhatsApp message announcing the next fantasy "
+    "football challenge. Use WhatsApp formatting: *single asterisks* for bold and "
+    "_underscores_ for italics; do not use Markdown formatting."
 )
 
 

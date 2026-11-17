@@ -25,6 +25,9 @@ gemini:
     the decisive player and stat when available. You could mention the runner-up
     and score gap only when useful and comparable; do not list every team. Then
     announce the next challenge's week, name, and rules. Keep the message concise.
+    Format the message for WhatsApp, not Markdown: use *single asterisks* for bold
+    and _underscores_ for italics. Do not use Markdown **bold**, headings, or other
+    Markdown-specific formatting; use plain-text line breaks and bullets.
 
 challenges:
   1: highest_scoring_team

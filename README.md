@@ -56,8 +56,9 @@ winner(s) or provisional leader(s) for the week just run and then previews the
 next configured challenge. The full current-week standings are provided for
 useful player, score, payout, and runner-up highlights. Prior results include
 cumulative wins, with tied first places splitting one win evenly; those totals
-are rounded to two decimal places for the announcement context. It saves the
-message under
+are rounded to two decimal places for the announcement context. The message uses
+WhatsApp formatting (`*single asterisks*` for bold and `_underscores_` for
+italics) and is saved under
 `data/results/announcements` as
 `league_announcement_<season>_week_<week>.txt`; rerunning a week replaces that
 week's announcement.

@@ -240,7 +240,15 @@ def generate_league_announcement(
         f"(week {next_week})"
     )
     client = genai.Client(api_key=api_key)
+    logger.info(
+        "Requesting league announcement from Gemini model %s for week %s "
+        "(next challenge week %s).",
+        model,
+        current_week,
+        next_week,
+    )
     interaction = client.interactions.create(model=model, input=prompt)
+    logger.info("Gemini announcement request completed for week %s.", current_week)
     if not isinstance(interaction, Interaction):
         raise TypeError("Gemini returned a streaming response unexpectedly.")
     output_text = interaction.output_text
